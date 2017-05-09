@@ -65,9 +65,13 @@ class Model:
                 continue
             else:
                 wave_values = self.wave[(x, y)]
-                true_values = numpy.where(wave_values)
+                true_values = numpy.where(wave_values)[0]
                 amount = numpy.sum(wave_values)
-                observed_sum = numpy.sum(self.stationary[true_values])
+                # FIXME
+                # I get a TypeError: only integer scalar arrays can be converted to a scalar index
+                # if I try simply self.stationary[true_values] (self.stationary being a list) and
+                # true_values being a numpy array
+                observed_sum = numpy.sum(numpy.array(self.stationary)[true_values])
 
                 if observed_sum == 0:
                     return False
@@ -92,9 +96,18 @@ class Model:
         # No minimum entropy, so mark everything as being observed...
         if argminx == -1 and argminy == -1:
             self.observed = numpy.zeros((self.FMX, self.FMY, self.T))
-            for (x, y, z), value in numpy.ndenumerate(self.wave):
-                if value:
-                    self.observed[(x, y, z)] = value
+
+            for (x, y) in numpy.ndindex(self.wave.shape[:2]):
+                wave_values = self.wave[(x, y)]
+                for t, value in numpy.ndenumerate(wave_values):
+                    if value:
+                        self.observed[x][y] = t
+                        break
+
+            # for (x, y, z), value in numpy.ndenumerate(self.wave):
+            #     if value:
+            #         self.observed[(x, y, z)] = value
+
             # self.observed = [[0 for _ in range(self.FMY)] for _ in range(self.FMX)]
             # for x in range(0, self.FMX):
             #     self.observed[x] = [0 for _ in range(self.FMY)]
@@ -366,9 +379,25 @@ class OverlappingModel(Model):
                     if (x < (self.FMX - self.N + 1)):
                         dx = self.N - 1
                     local_obsv = self.observed[x - dx][y - dy]
-                    local_patt = self.patterns[local_obsv][dx + dy * self.N]
-                    c = self.colors[local_patt]
-                    #bitmap_data[x + y * self.FMX] = (0xff000000 | (c.R << 16) | (c.G << 8) | c.B)
+                    # FIXME
+                    # I get a TypeError: only integer scalar arrays can be converted to a scalar index
+                    # if I try simply self.patterns[local_obsv], etc. (self.patterns being a list) and
+                    # local_obsv being a numpy array
+                    # ALSO
+                    # same issue with self.colors below
+                    # ALSO FIXME
+                    # local_obsv contains floats which don't work for indexing
+                    # hence the .astype(int). Should probably figure out why I get floats
+
+                    print(self.observed, type(self.observed))
+                    print(self.patterns, type(self.patterns))
+                    print(local_obsv, type(local_obsv))
+                    print(dx)
+                    print(dy)
+                    print(self.N)
+                    local_patt = numpy.array(self.patterns)[local_obsv.astype(int)][dx + dy * self.N]
+                    c = numpy.array(self.colors)[local_patt]
+                    # bitmap_data[x + y * self.FMX] = (0xff000000 | (c.R << 16) | (c.G << 8) | c.B)
                     if isinstance(c, (int, float)):
                         bitmap_data[x + y * self.FMX] = (c, c, c)
                     else:
