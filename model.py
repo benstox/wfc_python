@@ -85,7 +85,11 @@ class Model:
                 else:
                     main_sum = 0
                     log_sum = numpy.log(observed_sum)
-                    main_sum = numpy.dot(self.stationary[true_values], self.log_probit[true_values])
+                    # FIXME
+                    # I get a TypeError: only integer scalar arrays can be converted to a scalar index
+                    # if I try simply self.stationary[true_values] (self.stationary being a list) and
+                    # true_values being a numpy array, same with self.log_prob
+                    main_sum = numpy.dot(numpy.array(self.stationary)[true_values], numpy.array(self.log_prob)[true_values])
                     entropy = log_sum - main_sum / observed_sum
 
                 if entropy > 0 and (entropy + noise < observed_min):
@@ -95,11 +99,11 @@ class Model:
 
         # No minimum entropy, so mark everything as being observed...
         if argminx == -1 and argminy == -1:
-            self.observed = numpy.zeros((self.FMX, self.FMY, self.T))
+            self.observed = numpy.zeros((self.FMX, self.FMY))
 
             for (x, y) in numpy.ndindex(self.wave.shape[:2]):
                 wave_values = self.wave[(x, y)]
-                for t, value in numpy.ndenumerate(wave_values):
+                for (t, ), value in numpy.ndenumerate(wave_values):
                     if value:
                         self.observed[x][y] = t
                         break
@@ -137,7 +141,7 @@ class Model:
         self.rng = random.Random()
         self.rng.seed(seed)
         l = 0
-        while (l < limit) or (0 == limit):  # if limit == 0, then don't stop
+        while (l < limit) or (limit == 0):  # if limit == 0, then don't stop
             l += 1
             result = self.Observe()
             if result is not None:
@@ -154,11 +158,8 @@ class Model:
         return False
 
     def Clear(self):
-        for x in range(0, self.FMX):
-            for y in range(0, self.FMY):
-                for t in range(0, self.T):
-                    self.wave[x][y][t] = True
-                self.changes[x][y] = False
+        self.wave = numpy.full((self.FMX, self.FMY, self.T), True)
+        self.changes = numpy.full((self.FMX, self.FMY), False)
 
     def OnBoundary(self, x, y):
         return True  # Abstract, replaced in child classes
@@ -177,41 +178,43 @@ class OverlappingModel(Model):
         self.bitmap = Image.open("samples/{0}.png".format(name))
         self.SMX = self.bitmap.size[0]
         self.SMY = self.bitmap.size[1]
-        self.sample = [[0 for _ in range(self.SMY)] for _ in range(self.SMX)]
+        self.sample = numpy.zeros((self.SMX, self.SMY, 1))
         self.colors = []
-        for y in range(0, self.SMY):
-            for x in range(0, self.SMX):
+        for y in range(self.SMY):
+            for x in range(self.SMX):
                 a_color = self.bitmap.getpixel((x, y))
                 color_exists = [c for c in self.colors if c == a_color]
                 if len(color_exists) < 1:
                     self.colors.append(a_color)
-                samp_result = [i for i,v in enumerate(self.colors) if v == a_color]
+                samp_result = [i for i, v in enumerate(self.colors) if v == a_color]
                 self.sample[x][y] = samp_result
-                
+
         self.color_count = len(self.colors)
         self.W = StuffPower(self.color_count, self.N * self.N)
-        
-        self.patterns= [[]]
-        #self.ground = 0
-        
+
+        self.patterns = [[]]
+        # self.ground = 0
+
         def FuncPattern(passed_func):
             result = [0 for _ in range(self.N * self.N)]
             for y in range(0, self.N):
                 for x in range(0, self.N):
                     result[x + (y * self.N)] = passed_func(x, y)
             return result
-            
+
         pattern_func = FuncPattern
-            
+
         def PatternFromSample(x, y):
             def innerPattern(dx, dy):
                 return self.sample[(x + dx) % self.SMX][(y + dy) % self.SMY]
             return pattern_func(innerPattern)
+
         def Rotate(p):
             return FuncPattern(lambda x, y: p[self.N - 1 - y + x * self.N])
+
         def Reflect(p):
             return FuncPattern(lambda x, y: p[self.N - 1 - x + y * self.N])
-            
+
         def Index(p):
             result = 0
             power = 1
@@ -232,19 +235,19 @@ class OverlappingModel(Model):
                     count = count + 1
                 result[i] = count
             return result
-            
+
         self.weights = collections.Counter()
         ordering = []
-        
+
         ylimit = self.SMY - self.N + 1
         xlimit = self.SMX - self.N + 1
-        if True == periodic_input_value:
+        if periodic_input_value:
             ylimit = self.SMY
             xlimit = self.SMX
-        for y in range (0, ylimit):
+        for y in range(0, ylimit):
             for x in range(0, xlimit):
                 ps = [0 for _ in range(8)]
-                ps[0] = PatternFromSample(x,y)
+                ps[0] = PatternFromSample(x, y)
                 ps[1] = Reflect(ps[0])
                 ps[2] = Rotate(ps[0])
                 ps[3] = Reflect(ps[2])
@@ -252,30 +255,26 @@ class OverlappingModel(Model):
                 ps[5] = Reflect(ps[4])
                 ps[6] = Rotate(ps[4])
                 ps[7] = Reflect(ps[6])
-                for k in range(0,symmetry_value):
+                for k in range(0, symmetry_value):
                     ind = Index(ps[k])
-                    indexed_weight = collections.Counter({ind : 1})
+                    indexed_weight = collections.Counter({ind: 1})
                     self.weights = self.weights + indexed_weight
-                    if not ind in ordering:
+                    if ind not in ordering:
                         ordering.append(ind)
-                        
+
         self.T = len(self.weights)
         self.ground = int((ground_value + self.T) % self.T)
-        
+
         self.patterns = [[None] for _ in range(self.T)]
         self.stationary = [None for _ in range(self.T)]
         self.propagator = [[[[0]]] for _ in range(2 * self.N - 1)]
-        
+
         counter = 0
         for w in ordering:
             self.patterns[counter] = PatternFromIndex(w)
             self.stationary[counter] = self.weights[w]
             counter += 1
-            
-        for x in range(0, self.FMX):
-            for y in range(0, self.FMY):
-                self.wave[x][y] = [False for _ in range(self.T)]
-                
+
         def Agrees(p1, p2, dx, dy):
             xmin = dx
             xmax = self.N
@@ -297,7 +296,7 @@ class OverlappingModel(Model):
             self.propagator[x] = [[[0]] for _ in range(2 * self.N - 1)]
             for y in range(0, 2 * self.N - 1):
                 self.propagator[x][y] = [[0] for _ in range(self.T)]
-                                  
+
                 for t in range(0, self.T):
                     a_list = []
                     for t2 in range(0, self.T):
@@ -307,16 +306,16 @@ class OverlappingModel(Model):
                     for c in range(0, len(a_list)):
                         self.propagator[x][y][t][c] = a_list[c]
         return
-                    
+
     def OnBoundary(self, x, y):
         return (not self.periodic) and ((x + self.N > self.FMX) or (y + self.N > self.FMY))
-    
+
     def Propagate(self):
         change = False
         b = False
-        
-        #x2 = None
-        #y2 = None
+
+        # x2 = None
+        # y2 = None
         for x1 in range(0, self.FMX):
             for y1 in range(0, self.FMY):
                 if (self.changes[x1][y1]):
@@ -346,30 +345,30 @@ class OverlappingModel(Model):
                                 w2 = self.wave[x2][y2]
                                 
                                 p = self.propagator[(self.N - 1) - dx][(self.N - 1) - dy]
-                                
-                                for t2 in range(0,self.T):
+
+                                for t2 in range(0, self.T):
                                     if (not w2[t2]):
                                         pass
                                     else:
                                         b = False
                                         prop = p[t2]
                                         i_one = 0
-                                        while (i_one < len(prop)) and (False == b):
+                                        while (i_one < len(prop)) and (b == False):
                                             b = w1[prop[i_one]]
-                                            i_one += 1                                    
-                                        if False == b:
+                                            i_one += 1
+                                        if b == False:
                                             self.changes[x2][y2] = True
                                             change = True
                                             w2[t2] = False
                             dy += 1
                         dx += 1
-                                  
+
         return change
-        
+
     def Graphics(self):
-        result = Image.new("RGB",(self.FMX, self.FMY),(0,0,0))
+        result = Image.new("RGB", (self.FMX, self.FMY), (0, 0, 0))
         bitmap_data = list(result.getdata())
-        if(self.observed != None):
+        if self.observed is not None:
             for y in range(0, self.FMY):
                 dy = self.N - 1
                 if (y < (self.FMY - self.N + 1)):
@@ -388,13 +387,6 @@ class OverlappingModel(Model):
                     # ALSO FIXME
                     # local_obsv contains floats which don't work for indexing
                     # hence the .astype(int). Should probably figure out why I get floats
-
-                    print(self.observed, type(self.observed))
-                    print(self.patterns, type(self.patterns))
-                    print(local_obsv, type(local_obsv))
-                    print(dx)
-                    print(dy)
-                    print(self.N)
                     local_patt = numpy.array(self.patterns)[local_obsv.astype(int)][dx + dy * self.N]
                     c = numpy.array(self.colors)[local_patt]
                     # bitmap_data[x + y * self.FMX] = (0xff000000 | (c.R << 16) | (c.G << 8) | c.B)
@@ -402,7 +394,7 @@ class OverlappingModel(Model):
                         bitmap_data[x + y * self.FMX] = (c, c, c)
                     else:
                         bitmap_data[x + y * self.FMX] = (c[0], c[1], c[2])
-                    
+
         else:
             for y in range(0, self.FMY):
                 for x in range(0, self.FMX):
