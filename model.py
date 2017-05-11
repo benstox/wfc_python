@@ -99,36 +99,27 @@ class Model:
 
         # No minimum entropy, so mark everything as being observed...
         if argminx == -1 and argminy == -1:
-            self.observed = numpy.zeros((self.FMX, self.FMY))
 
-            for (x, y) in numpy.ndindex(self.wave.shape[:2]):
-                wave_values = self.wave[(x, y)]
-                for (t, ), value in numpy.ndenumerate(wave_values):
-                    if value:
-                        self.observed[x][y] = t
-                        break
+            def mark_observed(wave_array):
+                if numpy.any(wave_array):
+                    for (t, ), value in numpy.ndenumerate(wave_array):
+                        if value:
+                            return(t)
+                else:
+                    return(0)
 
-            # for (x, y, z), value in numpy.ndenumerate(self.wave):
-            #     if value:
-            #         self.observed[(x, y, z)] = value
-
-            # self.observed = [[0 for _ in range(self.FMY)] for _ in range(self.FMX)]
-            # for x in range(0, self.FMX):
-            #     self.observed[x] = [0 for _ in range(self.FMY)]
-            #     for y in range(0, self.FMY):
-            #         for t in range(0, self.T):
-            #             if self.wave[x][y][t]:
-            #                 self.observed[x][y] = t
-            #                 break
+            self.observed = numpy.apply_along_axis(mark_observed, 2, self.wave)
             return True
 
         # A minimum point has been found, so prep it for propogation...
-        distribution = numpy.zeros(self.T)
-        for t in range(0, self.T):
-            distribution[t] = self.stationary[t] if self.wave[argminx][argminy][t] else 0
+        distribution = numpy.vectorize(
+            lambda t:
+                self.stationary[t] if self.wave[argminx][argminy][t] else 0)(numpy.arange(self.T))
+
         r = StuffRandom(distribution, self.rng.random())
-        for t in range(0, self.T):
-            self.wave[argminx][argminy][t] = (t == r)
+        self.wave[argminx][argminy] = numpy.vectorize(
+            lambda t: (t == r))(numpy.arange(self.T))
+
         self.changes[argminx][argminy] = True
         return None
 
@@ -322,10 +313,10 @@ class OverlappingModel(Model):
                     self.changes[x1][y1] = False
                     dx = (0 - self.N) + 1
                     while dx < self.N:
-                    #for dx in range(1 - self.N, self.N):
+                    # for dx in range(1 - self.N, self.N):
                         dy = (0 - self.N) + 1
                         while dy < self.N:
-                        #for dy in range(1 - self.N, self.N):
+                        # for dy in range(1 - self.N, self.N):
                             x2 = x1 + dx
                             if x2 < 0:
                                 x2 += self.FMX
@@ -336,14 +327,14 @@ class OverlappingModel(Model):
                                 y2 += self.FMY
                             elif y2 >= self.FMY:
                                     y2 -= self.FMY
-                                    
+
                             if (not self.periodic) and (x2 + self.N > self.FMX or y2 + self.N > self.FMY):
                                 pass
                             else:
-                            
+
                                 w1 = self.wave[x1][y1]
                                 w2 = self.wave[x2][y2]
-                                
+
                                 p = self.propagator[(self.N - 1) - dx][(self.N - 1) - dy]
 
                                 for t2 in range(0, self.T):
@@ -422,9 +413,9 @@ class OverlappingModel(Model):
                                             g = int(color)
                                             b = int(color)
                                         else:
-                                            r += int(color[0])#.R
-                                            g += int(color[1])#.G
-                                            b += int(color[2])#.B
+                                            r += int(color[0])  # .R
+                                            g += int(color[1])  # .G
+                                            b += int(color[2])  # .B
                     # bitmap_data[x + y * self.FMX] = (0xff000000 | ((r / contributors) << 16) | ((g / contributors) << 8) | (b / contributors))
                     if contributors > 0:
                         bitmap_data[x + y * self.FMX] = (int(r / contributors), int(g / contributors), int(b / contributors))
@@ -433,17 +424,17 @@ class OverlappingModel(Model):
                         bitmap_data[x + y * self.FMX] = (int(r), int(g), int(b))
         result.putdata(bitmap_data)
         return result
-        
+
     def Clear(self):
         super(OverlappingModel, self).Clear()
-        if(self.ground != 0 ):
-           
+        if(self.ground != 0):
+
             for x in range(0, self.FMX):
                 for t in range(0, self.T):
                     if t != self.ground:
                         self.wave[x][self.FMY - 1][t] = False
                     self.changes[x][self.FMY - 1] = True
-                    
+
                     for y in range(0, self.FMY - 1):
                         self.wave[x][y][self.ground] = False
                         self.changes[x][y] = True
@@ -468,21 +459,16 @@ class SimpleTiledModel(Model):
 
 
 def StuffRandom(source_array, random_value):
-    a_sum = sum(source_array)
+    a_sum = numpy.sum(source_array)
+    if a_sum == 0:
+        source_array = numpy.ones(source_array.shape[0])
+        a_sum = numpy.sum(source_array)
 
-    if 0 == a_sum:
-        for j in range(0, len(source_array)):
-            source_array[j] = 1
-        a_sum = sum(source_array)
-    for j in range(0, len(source_array)):
-        source_array[j] /= a_sum
-    i = 0
-    x = 0
-    while (i < len(source_array)):
-        x += source_array[i]
+    source_array = source_array / a_sum
+    for (i, ), x in numpy.ndenumerate(numpy.cumsum(source_array)):
         if random_value <= x:
             return i
-        i += 1
+
     return 0
 
 
