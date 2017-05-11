@@ -122,8 +122,22 @@ class Model:
             #                 break
             return True
 
+        # MY INITIAL REPLACEMENT
+        # # A minimum point has been found, so prep it for propogation...
+        # distribution = numpy.vectorize(
+        #     lambda t:
+        #         self.stationary[t] if self.wave[argminx][argminy][t] else 0)(numpy.arange(self.T))
+
+        # r = StuffRandom(distribution, self.rng.random())
+        # self.wave[argminx][argminy] = numpy.vectorize(
+        #     lambda t: (t == r))(numpy.arange(self.T))
+
+        # self.changes[argminx][argminy] = True
+        # return None
+
+        # ORIGINAL VERSION
         # A minimum point has been found, so prep it for propogation...
-        distribution = numpy.zeros(self.T)
+        distribution = [0 for _ in range(0, self.T)]
         for t in range(0, self.T):
             distribution[t] = self.stationary[t] if self.wave[argminx][argminy][t] else 0
         r = StuffRandom(distribution, self.rng.random())
@@ -133,10 +147,16 @@ class Model:
         return None
 
     def Run(self, seed, limit):
+        # MY INITAL REPLACEMENT
+        # self.log_t = numpy.log(self.T)
+        # self.log_prob = numpy.log(self.stationary)
+
+        # ORIGINAL VERSION
         self.log_t = math.log(self.T)
         self.log_prob = [0 for _ in range(self.T)]
         for t in range(0, self.T):
             self.log_prob[t] = math.log(self.stationary[t])
+
         self.Clear()
         self.rng = random.Random()
         self.rng.seed(seed)
@@ -322,10 +342,10 @@ class OverlappingModel(Model):
                     self.changes[x1][y1] = False
                     dx = (0 - self.N) + 1
                     while dx < self.N:
-                    #for dx in range(1 - self.N, self.N):
+                    # for dx in range(1 - self.N, self.N):
                         dy = (0 - self.N) + 1
                         while dy < self.N:
-                        #for dy in range(1 - self.N, self.N):
+                        # for dy in range(1 - self.N, self.N):
                             x2 = x1 + dx
                             if x2 < 0:
                                 x2 += self.FMX
@@ -336,14 +356,14 @@ class OverlappingModel(Model):
                                 y2 += self.FMY
                             elif y2 >= self.FMY:
                                     y2 -= self.FMY
-                                    
+
                             if (not self.periodic) and (x2 + self.N > self.FMX or y2 + self.N > self.FMY):
                                 pass
                             else:
-                            
+
                                 w1 = self.wave[x1][y1]
                                 w2 = self.wave[x2][y2]
-                                
+
                                 p = self.propagator[(self.N - 1) - dx][(self.N - 1) - dy]
 
                                 for t2 in range(0, self.T):
@@ -353,10 +373,10 @@ class OverlappingModel(Model):
                                         b = False
                                         prop = p[t2]
                                         i_one = 0
-                                        while (i_one < len(prop)) and (b == False):
+                                        while (i_one < len(prop)) and (b is False):
                                             b = w1[prop[i_one]]
                                             i_one += 1
-                                        if b == False:
+                                        if b is False:
                                             self.changes[x2][y2] = True
                                             change = True
                                             w2[t2] = False
@@ -433,17 +453,17 @@ class OverlappingModel(Model):
                         bitmap_data[x + y * self.FMX] = (int(r), int(g), int(b))
         result.putdata(bitmap_data)
         return result
-        
+
     def Clear(self):
         super(OverlappingModel, self).Clear()
-        if(self.ground != 0 ):
-           
+        if(self.ground != 0):
+
             for x in range(0, self.FMX):
                 for t in range(0, self.T):
                     if t != self.ground:
                         self.wave[x][self.FMY - 1][t] = False
                     self.changes[x][self.FMY - 1] = True
-                    
+
                     for y in range(0, self.FMY - 1):
                         self.wave[x][y][self.ground] = False
                         self.changes[x][y] = True
@@ -465,6 +485,20 @@ class SimpleTiledModel(Model):
 
 # def getNextRandom():
 #     return random.random()
+
+# MY INITIAL REPLACEMENT FOR StuffRandom
+# def StuffRandom(source_array, random_value):
+#     a_sum = numpy.sum(source_array)
+#     if a_sum == 0:
+#         source_array = numpy.ones(source_array.shape[0])
+#         a_sum = numpy.sum(source_array)
+
+#     source_array = source_array / a_sum
+#     for (i, ), x in numpy.ndenumerate(numpy.cumsum(source_array)):
+#         if random_value <= x:
+#             return i
+
+#     return 0
 
 
 def StuffRandom(source_array, random_value):
