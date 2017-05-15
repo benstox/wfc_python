@@ -12,10 +12,12 @@
 
 import collections
 import math
-import numpy
+import numpy  # numpy==1.13.0rc1
 import os
 import random
 import xml.etree.ElementTree as ET
+
+from functools import partial
 
 try:
     import Image
@@ -124,26 +126,21 @@ class Model:
         return None
 
     def Run(self, seed, limit):
-        self.log_t = math.log(self.T)
-        self.log_prob = [0 for _ in range(self.T)]
-        for t in range(0, self.T):
-            self.log_prob[t] = math.log(self.stationary[t])
+        self.log_t = numpy.log(self.T)
+        self.log_prob = numpy.log(self.stationary)
         self.Clear()
         self.rng = random.Random()
         self.rng.seed(seed)
-        l = 0
-        while (l < limit) or (limit == 0):  # if limit == 0, then don't stop
-            l += 1
+        for i in numpy.arange(limit):
             result = self.Observe()
             if result is not None:
-                return result
-            pcount = 0
+                return(result)
+
             presult = True
             while(presult):
                 presult = self.Propagate()
-                # print("Propagate: {0}".format(pcount))
-                pcount += 1
-        return True
+
+        return(True)
 
     def Propagate(self):
         return False
@@ -170,17 +167,21 @@ class OverlappingModel(Model):
         self.SMX = self.bitmap.size[0]
         self.SMY = self.bitmap.size[1]
         self.sample = numpy.zeros((self.SMX, self.SMY, 1))
-        self.colors = []
-        for y in range(self.SMY):
-            for x in range(self.SMX):
-                a_color = self.bitmap.getpixel((x, y))
-                color_exists = [c for c in self.colors if c == a_color]
-                if len(color_exists) < 1:
-                    self.colors.append(a_color)
-                samp_result = [i for i, v in enumerate(self.colors) if v == a_color]
-                self.sample[x][y] = samp_result
 
-        self.color_count = len(self.colors)
+        pixels = numpy.array(self.bitmap).transpose(1, 0, 2)
+        pixels_flat = pixels.reshape(pixels.shape[0] * pixels.shape[1], pixels.shape[2])
+        self.colors = numpy.unique(pixels_flat, axis=0)
+
+        def get_pixel_color_index(pixel):
+            equal_pixel = partial(numpy.array_equal, pixel)
+            color_index = numpy.where(numpy.apply_along_axis(equal_pixel, 1, self.colors))[0][0]
+            return(color_index)
+
+        # self.sample is now an 2-D array of ints: [[1, 1, ...], [1, 1, ...]]
+        # instead of a 2-D array of lists containing a single int: [[[1], [1], ...] [[1], [1], ...]]
+        # not sure how this will affect everything yet
+        self.sample = numpy.apply_along_axis(get_pixel_color_index, 2, pixels)
+        self.color_count = self.colors.shape[0]
         self.W = StuffPower(self.color_count, self.N * self.N)
 
         self.patterns = [[]]
@@ -209,8 +210,8 @@ class OverlappingModel(Model):
         def Index(p):
             result = 0
             power = 1
-            for i in range(0, len(p)):
-                result = result + (sum(p[len(p) - 1 - i]) * power)
+            for i in range(len(p)):
+                result = result + (p[len(p) - 1 - i] * power)
                 power = power * self.color_count
             return result
 
