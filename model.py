@@ -131,7 +131,9 @@ class Model:
         self.Clear()
         self.rng = random.Random()
         self.rng.seed(seed)
-        for i in numpy.arange(limit):
+        l = 0
+        while (l < limit) or (limit == 0):  # if limit == 0, then don't stop
+            l += 1
             result = self.Observe()
             if result is not None:
                 return(result)
